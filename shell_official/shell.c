@@ -273,43 +273,73 @@ void execute_command(Command *cmd) {
     }
 }
 
-int main() {
-    char line[MAX_LINE];
+void process_line(char *line) {
+    // remove newline
+    line[strcspn(line, "\n")] = 0;
+    
+    // skip empty lines
+    if (strlen(line) == 0) {
+        return;
+    }
 
+    // exit command
+    if (strcmp(line, "exit") == 0) {
+        exit(0);
+    }
+
+    int token_count;
+    Token *tokens = tokenize_input(line, &token_count);
+    CommandList *cmd_list = parse_tokens(tokens, token_count);
+
+    // execute each command
+    for (int i = 0; i < cmd_list->count; i++) {
+        Command *cmd = cmd_list->commands[i];
+        while (cmd) {
+            execute_command(cmd);
+            cmd = cmd->next;
+        }
+    }
+
+    free_command_list(cmd_list);
+}
+
+void execute_batch_file(const char *filename) {
+    FILE *batch_file = fopen(filename, "r");
+    if (!batch_file) {
+        perror("Error opening batch file");
+        return;
+    }
+
+    char line[MAX_LINE];
+    while (fgets(line, sizeof(line), batch_file) != NULL) {
+        printf("mish(batch)> %s", line); // Show the command being executed
+        process_line(line);
+    }
+
+    fclose(batch_file);
+    exit(0);
+}
+
+int main(int argc, char *argv[]) {
+    // Check if a batch file was provided as an argument
+    if (argc > 1) {
+        // The first argument after the program name is treated as a batch file
+        execute_batch_file(argv[1]);
+        exit(0);
+    }
+
+    // Interactive mode
+    char line[MAX_LINE];
     while (1) {
         printf("mish> ");
 
         if (fgets(line, sizeof(line), stdin) == NULL) {
-            break;
+            printf("\n");
+            exit(0);
         }
         
-        // remove newline
-        line[strcspn(line, "\n")] = 0;
-        
-        // skip empty lines
-        if (strlen(line) == 0) {
-            continue;
-        }
-
-        // exit command
-        if (strcmp(line, "exit") == 0) {
-            break;
-        }
-
-        int token_count;
-        Token *tokens = tokenize_input(line, &token_count);
-        CommandList *cmd_list = parse_tokens(tokens, token_count);
-
-        // execute each command
-        for (int i = 0; i < cmd_list->count; i++) {
-            Command *cmd = cmd_list->commands[i];
-            while (cmd) {
-                execute_command(cmd);
-                cmd = cmd->next;
-            }
-        }
-
-        free_command_list(cmd_list);
+        // Remove newline and process the line
+        process_line(line);
     }
     
     return 0;
