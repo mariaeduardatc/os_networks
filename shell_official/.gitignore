@@ -1,0 +1,21 @@
+# Ignore shell scripts
+*.sh
+
+# Ignore compiled object files
+*.o
+*.so
+*.out
+*.a
+
+# Ignore executable files
+*.exe
+*.dll
+*.class
+
+# Ignore the compiled file "wish"
+wish
+
+# Ignore tests
+tester/
+tests/
+tests-out/
