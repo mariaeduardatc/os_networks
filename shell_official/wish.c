@@ -447,7 +447,6 @@ void free_command_list(CommandList *list)
     free(list);
 }
 
-// execute a single command
 void execute_command(Command *cmd)
 {
     // handling built-in commands
@@ -617,7 +616,7 @@ void execute_pipeline(Command *cmd)
             }
             else
             {
-                fprintf(stderr, "Command not found: %s\n", current->args[0]);
+                fprintf(stderr, "An error has occurred\n");
                 exit(EXIT_FAILURE);
             }
         }
