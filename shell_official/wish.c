@@ -14,7 +14,8 @@
 #define MAX_WORD_LEN 256
 #define MAX_PATHS 10
 
-char *search_paths[MAX_PATHS] = {"/bin", NULL};
+char *search_paths[MAX_PATHS];
+int path_count = 0;
 
 // token "labels"
 typedef enum
@@ -150,6 +151,8 @@ Command *parse_single_command(Token *tokens, int *current_pos, int token_count)
     Command *first_cmd = new_command();
     Command *current_cmd = first_cmd;
     int output_redirect_count = 0;
+    int input_redirect_count = 0;
+    int has_command = 0;  // flag to track if we have a command before redirection
 
     while (*current_pos < token_count)
     {
@@ -165,29 +168,112 @@ Command *parse_single_command(Token *tokens, int *current_pos, int token_count)
         switch (token.type)
         {
         case TOKEN_WORD:
+            // no redirection yet -> this word is part of the command
+            if (input_redirect_count == 0 && output_redirect_count == 0)
+            {
+                has_command = 1;
+            }
             current_cmd->args[current_cmd->arg_count++] = token.value;
             break;
 
         case TOKEN_PIPE:
+            if (!has_command)
+            {
+                fprintf(stderr, "An error has occurred\n");
+                while (first_cmd)
+                {
+                    Command *next = first_cmd->next;
+                    free(first_cmd);
+                    first_cmd = next;
+                }
+                return NULL;
+            }
             current_cmd->args[current_cmd->arg_count] = NULL;
             current_cmd->next = new_command();
             current_cmd = current_cmd->next;
-            // reset output redirection count for new command in pipe
+            // reset redirection counts and has_command flag for new command in pipe
             output_redirect_count = 0;
+            input_redirect_count = 0;
+            has_command = 0;
             break;
 
         case TOKEN_REDIRECT_IN:
+            if (!has_command)
+            {
+                fprintf(stderr, "An error has occurred\n");
+                while (first_cmd)
+                {
+                    Command *next = first_cmd->next;
+                    free(first_cmd);
+                    first_cmd = next;
+                }
+                return NULL;
+            }
+            
+            input_redirect_count++;
+            if (input_redirect_count > 1)
+            {
+                fprintf(stderr, "An error has occurred\n");
+                while (first_cmd)
+                {
+                    Command *next = first_cmd->next;
+                    free(first_cmd);
+                    first_cmd = next;
+                }
+                return NULL;
+            }
+            
             if (*current_pos + 1 < token_count && tokens[*current_pos + 1].type == TOKEN_WORD)
             {
                 current_cmd->input_file = tokens[++(*current_pos)].value;
+                // if next token is also a word
+                if (*current_pos + 1 < token_count && 
+                    tokens[*current_pos + 1].type == TOKEN_WORD &&
+                    tokens[*current_pos + 1].type != TOKEN_PIPE &&
+                    tokens[*current_pos + 1].type != TOKEN_REDIRECT_IN &&
+                    tokens[*current_pos + 1].type != TOKEN_REDIRECT_OUT &&
+                    tokens[*current_pos + 1].type != TOKEN_BACKGROUND)
+                {
+                    fprintf(stderr, "An error has occurred\n");
+                    while (first_cmd)
+                    {
+                        Command *next = first_cmd->next;
+                        free(first_cmd);
+                        first_cmd = next;
+                    }
+                    return NULL;
+                }
+            }
+            else
+            {
+                fprintf(stderr, "An error has occurred\n");
+                while (first_cmd)
+                {
+                    Command *next = first_cmd->next;
+                    free(first_cmd);
+                    first_cmd = next;
+                }
+                return NULL;
             }
             break;
 
         case TOKEN_REDIRECT_OUT:
+            if (!has_command)
+            {
+                fprintf(stderr, "An error has occurred\n");
+                while (first_cmd)
+                {
+                    Command *next = first_cmd->next;
+                    free(first_cmd);
+                    first_cmd = next;
+                }
+                return NULL;
+            }
+            
             output_redirect_count++;
             if (output_redirect_count > 1)
             {
-                fprintf(stderr, "Error: Multiple output redirections not allowed\n");
+                fprintf(stderr, "An error has occurred\n");
                 while (first_cmd)
                 {
                     Command *next = first_cmd->next;
@@ -200,10 +286,27 @@ Command *parse_single_command(Token *tokens, int *current_pos, int token_count)
             if (*current_pos + 1 < token_count && tokens[*current_pos + 1].type == TOKEN_WORD)
             {
                 current_cmd->output_file = tokens[++(*current_pos)].value;
+                // if next token is also a word (multiple files after redirection)
+                if (*current_pos + 1 < token_count && 
+                    tokens[*current_pos + 1].type == TOKEN_WORD &&
+                    tokens[*current_pos + 1].type != TOKEN_PIPE &&
+                    tokens[*current_pos + 1].type != TOKEN_REDIRECT_IN &&
+                    tokens[*current_pos + 1].type != TOKEN_REDIRECT_OUT &&
+                    tokens[*current_pos + 1].type != TOKEN_BACKGROUND)
+                {
+                    fprintf(stderr, "An error has occurred\n");
+                    while (first_cmd)
+                    {
+                        Command *next = first_cmd->next;
+                        free(first_cmd);
+                        first_cmd = next;
+                    }
+                    return NULL;
+                }
             }
             else
             {
-                fprintf(stderr, "Error: Missing output file after >\n");
+                fprintf(stderr, "An error has occurred\n");
                 while (first_cmd)
                 {
                     Command *next = first_cmd->next;
@@ -220,10 +323,21 @@ Command *parse_single_command(Token *tokens, int *current_pos, int token_count)
         (*current_pos)++;
     }
 
+    // final check to ensure we had a command
+    if (!has_command)
+    {
+        while (first_cmd)
+        {
+            Command *next = first_cmd->next;
+            free(first_cmd);
+            first_cmd = next;
+        }
+        return NULL;
+    }
+
     current_cmd->args[current_cmd->arg_count] = NULL;
     return first_cmd;
 }
-
 
 CommandList *parse_tokens(Token *tokens, int token_count)
 {
@@ -256,22 +370,63 @@ CommandList *parse_tokens(Token *tokens, int token_count)
     return list;
 }
 
+void initialize_paths()
+{
+    // clear existing paths
+    for (int i = 0; i < MAX_PATHS; i++)
+    {
+        search_paths[i] = NULL;
+    }
+    // default path to /bin
+    search_paths[0] = strdup("/bin");
+    path_count = 1;
+}
 
-int search_path(char *command) {
-    const char *directories[] = {"/bin", "/usr/bin", NULL};  // directories to search
+void handle_path_command(Command *cmd)
+{
+    // Free existing paths
+    for (int i = 0; i < path_count; i++)
+    {
+        free(search_paths[i]);
+        search_paths[i] = NULL;
+    }
+    path_count = 0;
+
+    // Add new paths
+    for (int i = 1; i < cmd->arg_count && path_count < MAX_PATHS; i++)
+    {
+        search_paths[path_count++] = strdup(cmd->args[i]);
+    }
+}
+
+int search_path(char *command)
+{
     char full_path[256];
 
-    for (int i = 0; directories[i] != NULL; i++) {
-        // Construct the full path by combining directory and command
-        snprintf(full_path, sizeof(full_path), "%s/%s", directories[i], command);
+    // First check if the command is an absolute path or relative path
+    if (strchr(command, '/') != NULL)
+    {
+        if (access(command, X_OK) == 0)
+        {
+            return 1;
+        }
+        return 0;
+    }
 
-        // Check if the command is accessible and executable
-        if (access(full_path, X_OK) == 0) {
-            strcpy(command, full_path);  // Update command with full path
-            return 1;                    // Command found and executable
+    // Search in all paths
+    for (int i = 0; i < path_count; i++)
+    {
+        if (search_paths[i] == NULL)
+            continue;
+
+        snprintf(full_path, sizeof(full_path), "%s/%s", search_paths[i], command);
+        if (access(full_path, X_OK) == 0)
+        {
+            strcpy(command, full_path);
+            return 1;
         }
     }
-    return 0;  // Command not found in any directory
+    return 0;
 }
 
 void free_command_list(CommandList *list)
@@ -298,17 +453,22 @@ void execute_command(Command *cmd)
     // handling built-in commands
     if (strcmp(cmd->args[0], "cd") == 0)
     {
-        if (cmd->arg_count > 1)
+        if (cmd->arg_count == 1)
         {
-            if (chdir(cmd->args[1]) != 0)
-            {
-                perror("cd error");
-            }
+            fprintf(stderr, "An error has occurred\n");
+            return;
         }
-        else
+        if (chdir(cmd->args[1]) != 0)
         {
-            chdir(getenv("HOME"));
+            fprintf(stderr, "An error has occurred\n");
         }
+        return;
+    }
+
+    // Add path command handling
+    if (strcmp(cmd->args[0], "path") == 0)
+    {
+        handle_path_command(cmd);
         return;
     }
 
@@ -328,7 +488,7 @@ void execute_command(Command *cmd)
             int fd = open(cmd->input_file, O_RDONLY);
             if (fd == -1)
             {
-                perror("Input redirection failed");
+                fprintf(stderr, "An error has occurred\n");
                 exit(EXIT_FAILURE);
             }
             dup2(fd, STDIN_FILENO);
@@ -341,39 +501,29 @@ void execute_command(Command *cmd)
             int fd = open(cmd->output_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
             if (fd == -1)
             {
-                perror("Output redirection failed");
+                fprintf(stderr, "An error has occurred\n");
                 exit(EXIT_FAILURE);
             }
             dup2(fd, STDOUT_FILENO);
             close(fd);
         }
 
-        char *path = NULL; 
-        if (search_path(cmd->args[0]) == 1)
+        if (search_path(cmd->args[0]))
         {
-            path = cmd->args[0];
-            execvp(path, cmd->args);
-        }
-        else
-        {
-            fprintf(stderr, "Command not found: %s\n", cmd->args[0]);
+            execv(cmd->args[0], cmd->args);
         }
 
-        perror("Command execution failed");
+        fprintf(stderr, "An error has occurred\n");
         exit(EXIT_FAILURE);
     }
     else if (pid < 0)
     {
-        perror("Fork failed");
+        fprintf(stderr, "An error has occurred\n");
         return;
     }
 
     // parent process
-    if (cmd->background)
-    {
-        printf("[%d] Running in background\n", pid);
-    }
-    else
+    if (!cmd->background)
     {
         int status;
         waitpid(pid, &status, 0);
@@ -382,7 +532,8 @@ void execute_command(Command *cmd)
 
 void execute_pipeline(Command *cmd)
 {
-    if (!cmd->next) {
+    if (!cmd->next)
+    {
         // no pipe -> execute the single command
         execute_command(cmd);
         return;
@@ -390,7 +541,8 @@ void execute_pipeline(Command *cmd)
 
     int num_commands = 0;
     Command *current = cmd;
-    while (current) {
+    while (current)
+    {
         num_commands++;
         current = current->next;
     }
@@ -399,8 +551,10 @@ void execute_pipeline(Command *cmd)
     pid_t pids[num_commands];
 
     // create all necessary pipes
-    for (int i = 0; i < num_commands - 1; i++) {
-        if (pipe(pipes[i]) == -1) {
+    for (int i = 0; i < num_commands - 1; i++)
+    {
+        if (pipe(pipes[i]) == -1)
+        {
             perror("Pipe creation failed");
             return;
         }
@@ -408,14 +562,18 @@ void execute_pipeline(Command *cmd)
 
     // execute all commands in pipeline
     current = cmd;
-    for (int i = 0; i < num_commands; i++) {
+    for (int i = 0; i < num_commands; i++)
+    {
         pids[i] = fork();
 
-        if (pids[i] == 0) { // child process
+        if (pids[i] == 0)
+        { // child process
             // input redirection for first command
-            if (i == 0 && current->input_file) {
+            if (i == 0 && current->input_file)
+            {
                 int fd = open(current->input_file, O_RDONLY);
-                if (fd == -1) {
+                if (fd == -1)
+                {
                     perror("Input redirection failed");
                     exit(EXIT_FAILURE);
                 }
@@ -424,9 +582,11 @@ void execute_pipeline(Command *cmd)
             }
 
             // output redirection for last command
-            if (i == num_commands - 1 && current->output_file) {
+            if (i == num_commands - 1 && current->output_file)
+            {
                 int fd = open(current->output_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-                if (fd == -1) {
+                if (fd == -1)
+                {
                     perror("Output redirection failed");
                     exit(EXIT_FAILURE);
                 }
@@ -435,27 +595,34 @@ void execute_pipeline(Command *cmd)
             }
 
             // setting up pipes
-            if (i > 0) { // not 1st command -> read from previous pipe
-                dup2(pipes[i-1][0], STDIN_FILENO);
+            if (i > 0)
+            { // not 1st command -> read from previous pipe
+                dup2(pipes[i - 1][0], STDIN_FILENO);
             }
-            if (i < num_commands - 1) { // not last command -> write to next pipe
+            if (i < num_commands - 1)
+            { // not last command -> write to next pipe
                 dup2(pipes[i][1], STDOUT_FILENO);
             }
 
             // close pipe file descriptors
-            for (int j = 0; j < num_commands - 1; j++) {
+            for (int j = 0; j < num_commands - 1; j++)
+            {
                 close(pipes[j][0]);
                 close(pipes[j][1]);
             }
 
-            if (search_path(current->args[0])) {
+            if (search_path(current->args[0]))
+            {
                 execvp(current->args[0], current->args);
-            } else {
+            }
+            else
+            {
                 fprintf(stderr, "Command not found: %s\n", current->args[0]);
                 exit(EXIT_FAILURE);
             }
         }
-        else if (pids[i] < 0) {
+        else if (pids[i] < 0)
+        {
             perror("Fork failed");
             return;
         }
@@ -464,13 +631,15 @@ void execute_pipeline(Command *cmd)
     }
 
     // parent process -> close pipe file descriptors
-    for (int i = 0; i < num_commands - 1; i++) {
+    for (int i = 0; i < num_commands - 1; i++)
+    {
         close(pipes[i][0]);
         close(pipes[i][1]);
     }
 
     // wait child processes to complete
-    for (int i = 0; i < num_commands; i++) {
+    for (int i = 0; i < num_commands; i++)
+    {
         waitpid(pids[i], NULL, 0);
     }
 }
@@ -509,14 +678,13 @@ void execute_batch_file(const char *filename)
     FILE *batch_file = fopen(filename, "r");
     if (!batch_file)
     {
-        perror("Error opening batch file");
+        perror("An error has occurred");
         return;
     }
 
     char line[MAX_LINE];
     while (fgets(line, sizeof(line), batch_file) != NULL)
     {
-        printf("wish(batch)> %s", line);
         process_line(line);
     }
 
@@ -526,11 +694,33 @@ void execute_batch_file(const char *filename)
 
 int main(int argc, char *argv[])
 {
+    initialize_paths();
+    
+    // if more than one argument is provided
+    if (argc > 2)
+    {
+        fprintf(stderr, "An error has occurred\n");
+        exit(1);
+    }
+    
     // batch file provided as an argument
-    if (argc > 1)
+    if (argc == 2)
     {
         // first argument after the program name -> treated as a batch file
-        execute_batch_file(argv[1]);
+        FILE *batch_file = fopen(argv[1], "r");
+        if (!batch_file)
+        {
+            fprintf(stderr, "An error has occurred\n");
+            exit(1);
+        }
+        
+        char line[MAX_LINE];
+        while (fgets(line, sizeof(line), batch_file) != NULL)
+        {
+            process_line(line);
+        }
+
+        fclose(batch_file);
         exit(0);
     }
 
