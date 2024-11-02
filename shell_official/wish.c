@@ -403,7 +403,7 @@ int search_path(char *command)
 {
     char full_path[256];
 
-    // First check if the command is an absolute path or relative path
+    // check if the command is an absolute path or relative path
     if (strchr(command, '/') != NULL)
     {
         if (access(command, X_OK) == 0)
@@ -413,7 +413,7 @@ int search_path(char *command)
         return 0;
     }
 
-    // Search in all paths
+    // search in all paths
     for (int i = 0; i < path_count; i++)
     {
         if (search_paths[i] == NULL)
