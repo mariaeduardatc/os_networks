@@ -1,5 +1,15 @@
 # IL181 - Build your own shell
+
+To run the tests:
+
+`$ cd shell_official`
+
+`$ gcc wish.c -o wish`
+
+`$ ./run-test.sh`
+
 In this documentation, I outline my journey in developing a simple shell, focusing on the essential components and functionalities that make it operational. My goal was to grasp the intricacies of shell design while ensuring that my implementation is informed by my understanding rather than merely replicating existing resources.
+
 [For the code documentation, scroll down]
 ## Understanding the Shell
 Before starting any code and tutorial, I wanted to understand first what a shell is, its main components, and how people come to build these blocks. I am starting this project with no background knowledge in the application nor in C.
