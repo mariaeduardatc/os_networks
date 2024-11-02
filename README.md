@@ -8,6 +8,8 @@ To run the tests:
 
 `$ ./run-test.sh`
 
+* the tutorial file contains the code I created based on Hacker Noon's tutorial. This code has more extensive comments since it was my main study reference to understand how to build the shell. The final assignment code is on `shell_official`.
+
 In this documentation, I outline my journey in developing a simple shell, focusing on the essential components and functionalities that make it operational. My goal was to grasp the intricacies of shell design while ensuring that my implementation is informed by my understanding rather than merely replicating existing resources.
 
 [For the code documentation, scroll down]
